@@ -2416,6 +2416,45 @@
                         <input type="text" id="beautifyIdentity" placeholder="例如：本人、博主、记录者">
                     </div>
                     <div class="beautify-row">
+                        <div class="beautify-section">
+  <div class="beautify-section-title">朋友圈专属设置</div>
+  <!-- 朋友圈主页背景 -->
+  <div class="beautify-row">
+    <label>朋友圈主页背景</label>
+    <input type="file" id="momentBgUpload" accept="image/jpg,image/gif,image/png">
+    <div id="momentBg" style="width:100%;height:200px;margin-top:8px;"></div>
+  </div>
+  <!-- 9:16发圈专用背景+透明度 -->
+  <div class="beautify-row">
+    <label>发圈9:16画布背景</label>
+    <input type="file" id="momentPostBgUpload" accept="image/jpg,image/gif,image/png">
+    <div id="momentPostBg" style="width:120px;height:213px;margin-top:8px;"></div>
+  </div>
+  <div class="beautify-row">
+    <label>背景透明度</label>
+    <input type="range" id="momentOpacitySlider" min="0.2" max="1" step="0.05" value="1">
+  </div>
+  <!-- 独立朋友圈气泡选择（和聊天气泡隔离） -->
+  <div class="beautify-row">
+    <label>朋友圈内容气泡样式</label>
+    <select id="momentBubbleSelect">
+      <option value="default">默认气泡</option>
+      <option value="round">圆角气泡</option>
+      <option value="square">直角气泡</option>
+      <option value="soft">柔和圆角气泡</option>
+    </select>
+  </div>
+</div>
+
+<div class="beautify-section">
+  <div class="beautify-section-title">表情包批量上传</div>
+  <div class="beautify-row">
+    <label>支持GIF/JPG，单次最多100张</label>
+    <!-- multiple允许多选，accept包含动态图格式 -->
+    <input type="file" id="emojiUploadInput" multiple accept="image/jpg,image/gif,image/png">
+  </div>
+</div>
+
                         <label>伴侣名称</label>
                         <input type="text" id="beautifyPartnerName" placeholder="输入伴侣名称">
                     </div>
@@ -5472,6 +5511,160 @@ bindImageUpload("momentBgUpload", "momentBg", "momentBg", true);
 bindImageUpload("homeAvatarUpload", "homeAvatar", "homeAvatar");
 // 聊天头像
 bindImageUpload("chatAvatarUpload", "chatAvatar", "chatAvatar");
+</script>
+<script>
+// 朋友圈&表情包全局存储key，独立不冲突
+const MOMENT_STORE_KEY = "momentCustomData";
+const EMOJI_STORE_KEY = "customEmojiList";
+
+// 页面加载完成强制读取本地存储渲染
+window.addEventListener("load", () => {
+  loadMomentLocalData();
+  renderEmojiList();
+});
+
+// 读取朋友圈本地配置（背景、透明度、气泡）
+function loadMomentLocalData() {
+  const store = localStorage.getItem(MOMENT_STORE_KEY);
+  if (!store) return;
+  const data = JSON.parse(store);
+  // 渲染主页背景 !important 强制优先级
+  if(data.mainBg){
+    document.documentElement.style.setProperty("--moment-main-bg",`url(${data.mainBg}) !important`);
+  }
+  // 9:16发图背景
+  if(data.postBg){
+    document.documentElement.style.setProperty("--moment-post-bg",`url(${data.postBg}) !important`);
+  }
+  // 透明度
+  if(data.opacity){
+    document.documentElement.style.setProperty("--moment-bg-opacity", data.opacity);
+    document.getElementById("momentOpacitySlider").value = data.opacity;
+  }
+  // 独立朋友圈气泡
+  if(data.bubbleType){
+    document.getElementById("momentBubbleSelect").value = data.bubbleType;
+    setMomentBubbleStyle(data.bubbleType);
+  }
+}
+
+// 保存朋友圈配置到本地
+function saveMomentData(key, value) {
+  let store = JSON.parse(localStorage.getItem(MOMENT_STORE_KEY) || "{}");
+  store[key] = value;
+  localStorage.setItem(MOMENT_STORE_KEY, JSON.stringify(store));
+  loadMomentLocalData();
+}
+
+// 独立朋友圈气泡样式切换（与聊天气泡完全隔离）
+function setMomentBubbleStyle(type) {
+  const bubbleDom = document.querySelectorAll(".moment-item .bubble");
+  bubbleDom.forEach(el=>{
+    el.className = `bubble moment-bubble-${type}`;
+  })
+}
+
+// 表情包批量上传（最多100张，支持gif/jpg）
+document.getElementById("emojiUploadInput").addEventListener("change",async function(e){
+  const files = Array.from(e.target.files);
+  if(files.length > 100){
+    alert("单次最多上传100张表情包");
+    return;
+  }
+  let emojiList = JSON.parse(localStorage.getItem(EMOJI_STORE_KEY) || "[]");
+  for(let file of files){
+    const base64 = await fileToBase64(file);
+    emojiList.push(base64);
+  }
+  localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(emojiList));
+  renderEmojiList();
+  this.value = "";
+});
+
+// 文件转base64
+function fileToBase64(file) {
+  return new Promise(res=>{
+    const reader = new FileReader();
+    reader.onload = e=>res(e.target.result);
+    reader.readAsDataURL(file);
+  })
+}
+
+// 渲染表情包列表
+function renderEmojiList(){
+  const list = JSON.parse(localStorage.getItem(EMOJI_STORE_KEY) || "[]");
+  const wrap = document.querySelector(".emoji-panel");
+  if(!wrap) return;
+  wrap.innerHTML = list.map(src=>`<img src="${src}" class="emoji-item">`).join("");
+}
+
+// 图片裁剪弹窗（原生Canvas，取消/确定双按钮）
+function openImageCrop(imgSrc, saveCallback) {
+  const mask = document.createElement("div");
+  mask.style = `position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;`;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const img = new Image();
+  img.src = imgSrc;
+  img.onload = ()=>{
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img,0,0);
+  }
+  const btnBox = document.createElement("div");
+  btnBox.style = "display:flex;gap:20px;margin-top:16px;";
+  // 取消：原图直接保存
+  const cancelBtn = document.createElement("button");
+  cancelBtn.innerText = "取消（原图）";
+  cancelBtn.onclick = ()=>{
+    mask.remove();
+    saveCallback(imgSrc);
+  }
+  // 确定：使用裁剪后画布图
+  const confirmBtn = document.createElement("button");
+  confirmBtn.innerText = "确定裁剪";
+  confirmBtn.onclick = ()=>{
+    const cropUrl = canvas.toDataURL("image/png");
+    mask.remove();
+    saveCallback(cropUrl);
+  }
+  btnBox.append(cancelBtn, confirmBtn);
+  mask.append(canvas, btnBox);
+  document.body.append(mask);
+}
+
+// 朋友圈主页背景上传触发裁剪
+document.getElementById("momentBgUpload").addEventListener("change",async function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const src = await fileToBase64(file);
+  openImageCrop(src, (finalSrc)=>{
+    saveMomentData("mainBg", finalSrc);
+  })
+  this.value = "";
+})
+
+// 9:16发圈背景上传触发裁剪
+document.getElementById("momentPostBgUpload").addEventListener("change",async function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const src = await fileToBase64(file);
+  openImageCrop(src, (finalSrc)=>{
+    saveMomentData("postBg", finalSrc);
+  })
+  this.value = "";
+})
+
+// 透明度滑块实时保存
+document.getElementById("momentOpacitySlider").addEventListener("input", function(){
+  saveMomentData("opacity", this.value);
+})
+
+// 气泡选择切换保存
+document.getElementById("momentBubbleSelect").addEventListener("change", function(){
+  saveMomentData("bubbleType", this.value);
+  setMomentBubbleStyle(this.value);
+})
 </script>
 
 </body>
