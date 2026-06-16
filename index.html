@@ -5508,6 +5508,239 @@ if (emojiUploadInput) {
   });
 }
 </script>
+<script>
+// ====================== 全局本地存储工具（扩展朋友圈背景、气泡存储） ======================
+const StorageTool = {
+  saveImg(key, base64) {
+    localStorage.setItem(key, base64);
+  },
+  getImg(key) {
+    return localStorage.getItem(key) || "";
+  },
+  clearImg(key) {
+    localStorage.removeItem(key);
+  },
+  // 表情包数组
+  getEmojiList() {
+    return JSON.parse(localStorage.getItem("emojiList") || "[]");
+  },
+  saveEmojiList(list) {
+    localStorage.setItem("emojiList", JSON.stringify(list));
+  },
+  // 朋友圈9:16发图背景
+  getMomentPostBg() {
+    return localStorage.getItem("momentPostBg") || "";
+  },
+  saveMomentPostBg(base64) {
+    localStorage.setItem("momentPostBg", base64);
+  },
+  // 朋友圈背景透明度
+  getMomentBgOpacity() {
+    return Number(localStorage.getItem("momentBgOpacity")) || 1;
+  },
+  saveMomentBgOpacity(val) {
+    localStorage.setItem("momentBgOpacity", val);
+  },
+  // 独立朋友圈气泡样式
+  getMomentBubbleStyle() {
+    return localStorage.getItem("momentBubbleStyle") || "default";
+  },
+  saveMomentBubbleStyle(name) {
+    localStorage.setItem("momentBubbleStyle", name);
+  }
+};
+// ====================== 1. 页面加载强制恢复所有图片、样式、透明度、气泡 ======================
+window.addEventListener("load", function () {
+  // 首页头像
+  const homeAvatar = document.getElementById("homeAvatar");
+  const saveHomeAvatar = StorageTool.getImg("homeAvatar");
+  if (homeAvatar && saveHomeAvatar) homeAvatar.src = saveHomeAvatar;
+
+  // 聊天界面头像
+  const chatAvatar = document.getElementById("chatAvatar");
+  const saveChatAvatar = StorageTool.getImg("chatAvatar");
+  if (chatAvatar && saveChatAvatar) chatAvatar.src = saveChatAvatar;
+
+  // 聊天背景 !important 强制样式
+  const chatBg = document.getElementById("chatBg");
+  const saveChatBg = StorageTool.getImg("chatBg");
+  if (chatBg && saveChatBg) {
+    chatBg.style.backgroundImage = `url(${saveChatBg})`;
+    chatBg.style.backgroundSize = "cover !important";
+    chatBg.style.backgroundPosition = "center !important";
+    chatBg.style.backgroundRepeat = "no-repeat !important";
+  }
+
+  // 朋友圈主页背景（修复刷新丢失）
+  const momentBg = document.getElementById("momentBg");
+  const saveMomentBg = StorageTool.getImg("momentBg");
+  const momentOpacity = StorageTool.getMomentBgOpacity();
+  if (momentBg && saveMomentBg) {
+    momentBg.style.backgroundImage = `url(${saveMomentBg})`;
+    momentBg.style.backgroundSize = "cover !important";
+    momentBg.style.backgroundPosition = "center !important";
+    momentBg.style.backgroundRepeat = "no-repeat !important";
+    momentBg.style.opacity = momentOpacity;
+  }
+
+  // 朋友圈发布页9:16独立背景
+  const momentPostBg = document.getElementById("momentPostBg");
+  const savePostBg = StorageTool.getMomentPostBg();
+  if (momentPostBg && savePostBg) {
+    momentPostBg.style.backgroundImage = `url(${savePostBg})`;
+    momentPostBg.style.backgroundSize = "cover !important";
+    momentPostBg.style.backgroundPosition = "center !important";
+    momentPostBg.style.aspectRatio = "9/16";
+  }
+
+  // 加载朋友圈独立气泡样式
+  const bubbleType = StorageTool.getMomentBubbleStyle();
+  document.body.setAttribute("moment-bubble", bubbleType);
+});
+
+// ====================== 2. Canvas图片裁剪工具 ======================
+function cropImageToBase64(imgBase64, cropX, cropY, cropW, cropH) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = imgBase64;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      resolve(canvas.toDataURL("image/jpeg", 0.92));
+    };
+  });
+}
+// ====================== 3. 通用图片上传（裁剪弹窗：取消原图 / 确定裁剪） ======================
+function bindImageUpload(inputId, targetId, storageKey, isBg = false, is916Post = false) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.setAttribute("accept", "image/*,.gif");
+
+  input.addEventListener("change", async function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const maxSize = isBg ? 5 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert(`图片不能超过${maxSize / 1024 / 1024}MB`);
+      this.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async function (res) {
+      const rawBase64 = res.target.result;
+      const targetEl = document.getElementById(targetId);
+      // 弹窗选择
+      const opt = confirm("取消=直接保存原图\n确定=裁剪后保存");
+      if (!opt) {
+        // 原图保存
+        applyImage(targetEl, rawBase64, isBg, is916Post);
+        StorageTool.saveImg(storageKey, rawBase64);
+      } else {
+        // 裁剪后保存
+        const cropW = is916Post ? 1080 : 800;
+        const cropH = is916Post ? 1920 : 800;
+        const cropData = await cropImageToBase64(rawBase64, 0, 0, cropW, cropH);
+        applyImage(targetEl, cropData, isBg, is916Post);
+        StorageTool.saveImg(storageKey, cropData);
+      }
+      input.value = "";
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// 统一渲染图片到页面
+function applyImage(el, base64, isBg, is916Post) {
+  if (isBg) {
+    el.style.backgroundImage = `url(${base64})`;
+    el.style.backgroundSize = "cover !important";
+    el.style.backgroundPosition = "center !important";
+    if (is916Post) el.style.aspectRatio = "9/16";
+  } else {
+    el.src = base64;
+  }
+}
+// ====================== 4. 绑定所有上传入口 ======================
+// 首页头像
+bindImageUpload("homeAvatarUpload", "homeAvatar", "homeAvatar");
+// 聊天头像
+bindImageUpload("chatAvatarUpload", "chatAvatar", "chatAvatar");
+// 聊天背景
+bindImageUpload("chatBgUpload", "chatBg", "chatBg", true);
+// 朋友圈主页背景
+bindImageUpload("momentBgUpload", "momentBg", "momentBg", true);
+// 朋友圈发布页9:16独立背景
+bindImageUpload("momentPostBgUpload", "momentPostBg", "momentPostBg", true, true);
+
+// ====================== 5. 朋友圈背景透明度调节 ======================
+function initMomentOpacitySlider() {
+  const opacitySlider = document.getElementById("momentOpacitySlider");
+  if (!opacitySlider) return;
+  // 读取本地保存的透明度
+  opacitySlider.value = StorageTool.getMomentBgOpacity();
+  opacitySlider.addEventListener("input", function () {
+    const val = Number(this.value);
+    const momentBg = document.getElementById("momentBg");
+    if (momentBg) momentBg.style.opacity = val;
+    StorageTool.saveMomentBgOpacity(val);
+  });
+}
+
+// ====================== 6. 朋友圈独立气泡切换（和聊天气泡完全隔离） ======================
+function initMomentBubbleSelect() {
+  const bubbleSelect = document.getElementById("momentBubbleSelect");
+  if (!bubbleSelect) return;
+  bubbleSelect.value = StorageTool.getMomentBubbleStyle();
+  bubbleSelect.addEventListener("change", function () {
+    const style = this.value;
+    document.body.setAttribute("moment-bubble", style);
+    StorageTool.saveMomentBubbleStyle(style);
+  });
+}
+// ====================== 7. 表情包全新升级：支持gif动图，单次最多100张 ======================
+function initEmojiUpload() {
+  const emojiUploadInput = document.getElementById("emojiUploadInput");
+  if (!emojiUploadInput) return;
+  emojiUploadInput.setAttribute("multiple", "multiple");
+  emojiUploadInput.setAttribute("accept", "image/*,.gif");
+
+  emojiUploadInput.addEventListener("change", async function (e) {
+    const files = e.target.files;
+    if (files.length === 0) return;
+    // 单次上限100张
+    if (files.length > 100) {
+      alert("单次最多选择100张表情包，请重新选择");
+      this.value = "";
+      return;
+    }
+    let emojiList = StorageTool.getEmojiList();
+    // 单张1MB限制，支持gif动图
+    for (const file of files) {
+      if (file.size > 1 * 1024 * 1024) {
+        alert(`表情包${file.name}超过1MB，已跳过`);
+        continue;
+      }
+      const base64 = await new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = ev => resolve(ev.target.result);
+        r.readAsDataURL(file);
+      });
+      emojiList.push(base64);
+    }
+    StorageTool.saveEmojiList(emojiList);
+    alert(`成功添加${files.length}张表情包（支持gif动图）`);
+    this.value = "";
+  });
+}
+
+// 初始化全部功能
+initMomentOpacitySlider();
+initMomentBubbleSelect();
+initEmojiUpload();
+</script>
 
 </body>
 </html>
