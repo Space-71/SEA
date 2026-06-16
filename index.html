@@ -5394,5 +5394,120 @@
     <script src="js/shop.js"></script>
     <script src="js/gift-cabinet.js"></script>
     <script src="js/moments.js"></script>
+<script>
+// ====================== 全局本地存储工具（所有图片/配置永久保存） ======================
+const StorageTool = {
+  // 保存图片Base64
+  saveImg(key, base64) {
+    localStorage.setItem(key, base64);
+  },
+  // 读取图片
+  getImg(key) {
+    return localStorage.getItem(key) || "";
+  },
+  // 清除指定图片
+  clearImg(key) {
+    localStorage.removeItem(key);
+  }
+};
+
+// ====================== 1. 页面加载自动恢复所有头像、背景 ======================
+window.addEventListener("load", function () {
+  // 首页头像
+  const homeAvatar = document.getElementById("homeAvatar");
+  const saveHomeAvatar = StorageTool.getImg("homeAvatar");
+  if (homeAvatar && saveHomeAvatar) homeAvatar.src = saveHomeAvatar;
+
+  // 聊天界面头像
+  const chatAvatar = document.getElementById("chatAvatar");
+  const saveChatAvatar = StorageTool.getImg("chatAvatar");
+  if (chatAvatar && saveChatAvatar) chatAvatar.src = saveChatAvatar;
+
+  // 聊天背景
+  const chatBg = document.getElementById("chatBg");
+  const saveChatBg = StorageTool.getImg("chatBg");
+  if (chatBg && saveChatBg) chatBg.style.backgroundImage = `url(${saveChatBg})`;
+
+  // 朋友圈头像
+  const momentAvatar = document.getElementById("momentAvatar");
+  const saveMomentAvatar = StorageTool.getImg("momentAvatar");
+  if (momentAvatar && saveMomentAvatar) momentAvatar.src = saveMomentAvatar;
+
+  // 朋友圈背景
+  const momentBg = document.getElementById("momentBg");
+  const saveMomentBg = StorageTool.getImg("momentBg");
+  if (momentBg && saveMomentBg) momentBg.style.backgroundImage = `url(${saveMomentBg})`;
+});
+
+// ====================== 2. 通用图片上传+剪裁兼容+持久化函数 ======================
+function bindImageUpload(inputId, targetId, storageKey, isBg = false) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  // 允许图片剪裁（手机原生剪裁弹窗）
+  input.setAttribute("capture", "environment");
+  input.setAttribute("accept", "image/*");
+
+  input.addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    // 限制图片2MB，避免存储溢出
+    if (file.size > 2 * 1024 * 1024) {
+      alert("图片不能超过2MB，请压缩后重新上传");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function (res) {
+      const base64 = res.target.result;
+      const targetEl = document.getElementById(targetId);
+      if (isBg) {
+        targetEl.style.backgroundImage = `url(${base64})`;
+      } else {
+        targetEl.src = base64;
+      }
+      // 永久存入浏览器本地，刷新不丢失
+      StorageTool.saveImg(storageKey, base64);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ====================== 3. 绑定所有头像、背景上传框 ======================
+// 首页头像上传
+bindImageUpload("homeAvatarUpload", "homeAvatar", "homeAvatar");
+// 聊天页头像上传
+bindImageUpload("chatAvatarUpload", "chatAvatar", "chatAvatar");
+// 聊天背景上传
+bindImageUpload("chatBgUpload", "chatBg", "chatBg", true);
+// 朋友圈头像上传
+bindImageUpload("momentAvatarUpload", "momentAvatar", "momentAvatar");
+// 朋友圈背景上传
+bindImageUpload("momentBgUpload", "momentBg", "momentBg", true);
+
+// ====================== 4. 表情包多选修复（放开文件多选限制） ======================
+const emojiUploadInput = document.getElementById("emojiUpload");
+if (emojiUploadInput) {
+  emojiUploadInput.setAttribute("multiple", "multiple"); // 开启多选
+  emojiUploadInput.addEventListener("change", function (e) {
+    const files = e.target.files;
+    if (files.length === 0) return;
+    // 批量读取多选表情包，存入本地数组
+    let emojiList = JSON.parse(localStorage.getItem("emojiList") || "[]");
+    for (let file of files) {
+      if (file.size > 1 * 1024 * 1024) {
+        alert(`表情包${file.name}超过1MB，已跳过`);
+        continue;
+      }
+      const reader = new FileReader();
+      reader.onload = function (res) {
+        emojiList.push(res.target.result);
+        localStorage.setItem("emojiList", JSON.stringify(emojiList));
+        // 这里可自行补充渲染表情包列表的代码
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+}
+</script>
+
 </body>
 </html>
